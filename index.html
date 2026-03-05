@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BudgetFlow Pro - Gestione Finanziaria</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1',
+                        secondary: '#4f46e5',
+                        income: '#10b981', // Verde per entrate
+                        expense: '#ef4444' // Rosso per uscite
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Stile personalizzato per lo switch */
+        .switch-container { background-color: #e5e7eb; }
+        .dark .switch-container { background-color: #374151; }
+        .switch-btn-active { transform: translateX(0); }
+        .switch-btn-inactive { transform: translateX(100%); }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 transition-colors duration-300 min-h-screen">
+
+    <div class="container mx-auto p-4 max-w-6xl">
+        
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-8 py-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-primary p-3 rounded-xl text-white shadow-lg">
+                    <i class="fas fa-chart-pie text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800 dark:text-white">BudgetFlow</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Gestione Entrate & Uscite</p>
+                </div>
+            </div>
+            <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+                <i class="fas fa-moon text-xl dark:hidden"></i>
+                <i class="fas fa-sun text-xl hidden dark:block text-yellow-400"></i>
+            </button>
+        </header>
+
+        <!-- Griglia Principale -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Colonna Sinistra: Form e Grafico -->
+            <div class="lg:col-span-1 space-y-6">
+                
+                <!-- Card Form -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-plus-circle text-primary"></i> Nuova Transazione
+                    </h2>
+                    
+                    <form id="transaction-form" class="space-y-4">
+                        
+                        <!-- Switch Entrate/Uscite -->
+                        <div class="switch-container rounded-lg p-1 relative flex mb-4 cursor-pointer" id="type-switch">
+                            <input type="hidden" id="tipo-transazione" value="uscita">
+                            <div class="absolute top-1 bottom-1 w-1/2 rounded-md transition-all duration-300 bg-expense shadow" id="switch-indicator"></div>
+                            <div class="w-1/2 text-center py-2 z-10 text-sm font-bold relative" id="label-uscita">Uscita</div>
+                            <div class="w-1/2 text-center py-2 z-10 text-sm font-bold relative text-gray-400" id="label-entrata">Entrata</div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Descrizione</label>
+                            <input type="text" id="descrizione" required class="w-full px-4 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary outline-none transition" placeholder="Es. Stipendio o Spesa">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Importo (€)</label>
+                                <input type="number" id="importo" step="0.01" required class="w-full px-4 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary outline-none transition" placeholder="0.00">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Data</label>
+                                <input type="date" id="data" required class="w-full px-4 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary outline-none transition">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Categoria</label>
+                            <select id="categoria" class="w-full px-4 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary outline-none transition">
+                                <!-- Opzioni popolate da JS -->
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-primary hover:bg-secondary text-white font-bold py-3 rounded-lg shadow-md transition transform hover:-translate-y-0.5">
+                            Aggiungi
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Card Grafico -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 h-80">
+                    <h2 class="text-lg font-semibold mb-4">Bilancio Generale</h2>
+                    <div class="relative h-56">
+                        <canvas id="flowChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Colonna Destra: Statistiche e Lista -->
+            <div class="lg:col-span-2 space-y-6">
+                
+                <!-- Cards Statistiche (Saldo, Entrate, Uscite) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Saldo -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border-l-4 border-primary">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase font-semibold">Saldo Attuale</p>
+                                <p id="stat-saldo" class="text-2xl font-bold text-primary">€ 0.00</p>
+                            </div>
+                            <i class="fas fa-piggy-bank text-primary text-3xl opacity-50"></i>
+                        </div>
+                    </div>
+                    <!-- Entrate -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border-l-4 border-income">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase font-semibold">Entrate Totali</p>
+                                <p id="stat-entrate" class="text-2xl font-bold text-income">+ € 0.00</p>
+                            </div>
+                            <i class="fas fa-arrow-trend-up text-income text-3xl opacity-50"></i>
+                        </div>
+                    </div>
+                    <!-- Uscite -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border-l-4 border-expense">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase font-semibold">Uscite Totali</p>
+                                <p id="stat-uscite" class="text-2xl font-bold text-expense">- € 0.00</p>
+                            </div>
+                            <i class="fas fa-arrow-trend-down text-expense text-3xl opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filtro ed Export -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-4 flex flex-wrap justify-between items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium">Filtra:</label>
+                        <select id="filtro-tipo" class="px-3 py-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 text-sm">
+                            <option value="tutte">Tutte</option>
+                            <option value="entrata">Solo Entrate</option>
+                            <option value="uscita">Solo Uscite</option>
+                        </select>
+                    </div>
+                    <button id="btn-export" class="flex items-center gap-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 px-4 py-2 rounded-lg text-sm font-medium transition">
+                        <i class="fas fa-download"></i> Esporta CSV
+                    </button>
+                </div>
+
+                <!-- Lista Transazioni -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-md overflow-hidden">
+                    <div class="p-5 border-b dark:border-gray-700">
+                        <h2 class="text-lg font-semibold">Storico Movimenti</h2>
+                    </div>
+                    <div id="lista-container" class="divide-y dark:divide-gray-700 max-h-[500px] overflow-y-auto">
+                        <div class="p-10 text-center text-gray-400">
+                            <i class="fas fa-coins text-4xl mb-2"></i>
+                            <p>Nessun movimento registrato</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURAZIONE ---
+        const categorie = {
+            uscita: ['Alimentari', 'Trasporti', 'Intrattenimento', 'Bollette', 'Salute', 'Shopping', 'Altro'],
+            entrata: ['Stipendio', 'Freelance', 'Investimenti', 'Vendite', 'Regalo', 'Rimborsi', 'Altro']
+        };
+
+        let transazioni = JSON.parse(localStorage.getItem('budgetFlowData')) || [];
+        let myChart = null;
+        let currentType = 'uscita'; // Default
+
+        // --- ELEMENTI DOM ---
+        const form = document.getElementById('transaction-form');
+        const listaContainer = document.getElementById('lista-container');
+        const filtroSelect = document.getElementById('filtro-tipo');
+        const categoriaSelect = document.getElementById('categoria');
+        const typeSwitch = document.getElementById('type-switch');
+        const switchIndicator = document.getElementById('switch-indicator');
+        const hiddenTypeInput = document.getElementById('tipo-transazione');
+        const labelUscita = document.getElementById('label-uscita');
+        const labelEntrata = document.getElementById('label-entrata');
+        
+        // Inizializza data odierna
+        document.getElementById('data').valueAsDate = new Date();
+
+        // --- FUNZIONI LOGICHE ---
+
+        function aggiornaCategorie() {
+            categoriaSelect.innerHTML = '';
+            const options = categorie[currentType];
+            options.forEach(opt => {
+                const el = document.createElement('option');
+                el.value = opt;
+                el.textContent = opt;
+                categoriaSelect.appendChild(el);
+            });
+        }
+
+        function salvaDati() {
+            localStorage.setItem('budgetFlowData', JSON.stringify(transazioni));
+        }
+
+        function formattaData(dataStr) {
+            const options = { day: 'numeric', month: 'short', year: 'numeric' };
+            return new Date(dataStr).toLocaleDateString('it-IT', options);
+        }
+
+        function aggiornaDashboard() {
+            const filtro = filtroSelect.value;
+            let listaFiltrata = transazioni;
+            
+            if(filtro !== 'tutte') {
+                listaFiltrata = transazioni.filter(t => t.tipo === filtro);
+            }
+
+            // Calcoli
+            const totaleEntrate = transazioni.filter(t => t.tipo === 'entrata').reduce((acc, t) => acc + parseFloat(t.importo), 0);
+            const totaleUscite = transazioni.filter(t => t.tipo === 'uscita').reduce((acc, t) => acc + parseFloat(t.importo), 0);
+            const saldo = totaleEntrate - totaleUscite;
+
+            // Aggiorna Cards
+            const saldoEl = document.getElementById('stat-saldo');
+            saldoEl.textContent = `€ ${saldo.toFixed(2)}`;
+            saldoEl.className = `text-2xl font-bold ${saldo >= 0 ? 'text-income' : 'text-expense'}`;
+            
+            document.getElementById('stat-entrate').textContent = `+ € ${totaleEntrate.toFixed(2)}`;
+            document.getElementById('stat-uscite').textContent = `- € ${totaleUscite.toFixed(2)}`;
+
+            // Aggiorna Lista
+            listaContainer.innerHTML = '';
+            if (listaFiltrata.length === 0) {
+                listaContainer.innerHTML = `<div class="p-10 text-center text-gray-400"><i class="fas fa-search text-4xl mb-2"></i><p>Nessun movimento trovato</p></div>`;
+            } else {
+                // Ordina per data recente
+                listaFiltrata.sort((a, b) => new Date(b.data) - new Date(a.data));
+
+                listaFiltrata.forEach(t => {
+                    const isEntrata = t.tipo === 'entrata';
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition fade-in';
+                    
+                    div.innerHTML = `
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ${isEntrata ? 'bg-green-100 dark:bg-green-900 text-green-600' : 'bg-red-100 dark:bg-red-900 text-red-600'}">
+                                <i class="fas ${isEntrata ? 'fa-arrow-down' : 'fa-arrow-up'}"></i>
+                            </div>
+                            <div>
+                                <p class="font-semibold">${t.descrizione}</p>
+                                <p class="text-xs text-gray-500">${t.categoria} • ${formattaData(t.data)}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span class="font-bold ${isEntrata ? 'text-income' : 'text-expense'}">
+                                ${isEntrata ? '+' : '-'} €${parseFloat(t.importo).toFixed(2)}
+                            </span>
+                            <button onclick="eliminaTransazione('${t.id}')" class="text-gray-400 hover:text-red-500 transition"><i class="fas fa-trash-alt"></i></button>
+                        </div>
+                    `;
+                    listaContainer.appendChild(div);
+                });
+            }
+
+            aggiornaGrafico(totaleEntrate, totaleUscite);
+        }
+
+        function aggiornaGrafico(entrate, uscite) {
+            const ctx = document.getElementById('flowChart').getContext('2d');
+            
+            if (myChart) myChart.destroy();
+
+            // Se non ci sono dati, mostra messaggio
+            if(entrate === 0 && uscite === 0) {
+                ctx.font = "16px sans-serif";
+                ctx.fillStyle = "#9ca3af";
+                ctx.textAlign = "center";
+                ctx.fillText("Nessun dato da mostrare", ctx.canvas.width / 2, ctx.canvas.height / 2);
+                return;
+            }
+
+            myChart = new Chart(ctx, {
+                type: 'bar', // Grafico a barre orizzontali
+                data: {
+                    labels: ['Entrate', 'Uscite'],
+                    datasets: [{
+                        label: '€',
+                        data: [entrate, uscite],
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.7)', // Verde
+                            'rgba(239, 68, 68, 0.7)'  // Rosso
+                        ],
+                        borderColor: [
+                            'rgba(16, 185, 129, 1)',
+                            'rgba(239, 68, 68, 1)'
+                        ],
+                        borderWidth: 1,
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    indexAxis: 'y', // Rende le barre orizzontali
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { 
+                            beginAtZero: true,
+                            grid: { color: localStorage.getItem('theme') === 'dark' ? '#374151' : '#e5e7eb' }
+                        },
+                        y: { 
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function eliminaTransazione(id) {
+            if(confirm("Sei sicuro di voler eliminare questa transazione?")) {
+                transazioni = transazioni.filter(t => t.id !== id);
+                salvaDati();
+                aggiornaDashboard();
+            }
+        }
+
+        function esportaCSV() {
+            if (transazioni.length === 0) return alert("Nessun dato da esportare!");
+            
+            let csv = "Data,Descrizione,Categoria,Tipo,Importo\n";
+            transazioni.forEach(t => {
+                csv += `${t.data},"${t.descrizione}",${t.categoria},${t.tipo},${t.importo}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'report_finanziario.csv';
+            a.click();
+        }
+
+        // --- EVENT LISTENERS ---
+
+        // Switch Tipo (Entrata/Uscita)
+        typeSwitch.addEventListener('click', () => {
+            currentType = currentType === 'uscita' ? 'entrata' : 'uscita';
+            hiddenTypeInput.value = currentType;
+            
+            if(currentType === 'entrata') {
+                switchIndicator.classList.remove('bg-expense');
+                switchIndicator.classList.add('bg-income');
+                labelEntrata.classList.remove('text-gray-400');
+                labelEntrata.classList.add('text-white');
+                labelUscita.classList.remove('text-white');
+                labelUscita.classList.add('text-gray-400');
+            } else {
+                switchIndicator.classList.remove('bg-income');
+                switchIndicator.classList.add('bg-expense');
+                labelUscita.classList.remove('text-gray-400');
+                labelUscita.classList.add('text-white');
+                labelEntrata.classList.remove('text-white');
+                labelEntrata.classList.add('text-gray-400');
+            }
+            
+            aggiornaCategorie();
+        });
+
+        // Form Submit
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const nuovaTransazione = {
+                id: Date.now().toString(),
+                descrizione: document.getElementById('descrizione').value,
+                importo: document.getElementById('importo').value,
+                categoria: document.getElementById('categoria').value,
+                data: document.getElementById('data').value,
+                tipo: currentType
+            };
+            transazioni.push(nuovaTransazione);
+            salvaDati();
+            aggiornaDashboard();
+            form.reset();
+            document.getElementById('data').valueAsDate = new Date();
+            aggiornaCategorie(); // Reset categorie al default
+        });
+
+        // Filtro
+        filtroSelect.addEventListener('change', aggiornaDashboard);
+
+        // Export
+        document.getElementById('btn-export').addEventListener('click', esportaCSV);
+
+        // Dark Mode
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+            aggiornaDashboard(); // Aggiorna grafici e colori
+        });
+
+        // Inizializzazione
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        }
+        
+        aggiornaCategorie();
+        aggiornaDashboard();
+
+    </script>
+</body>
+</html>
