@@ -8,6 +8,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -27,7 +31,12 @@
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Stile personalizzato per lo switch */
+        /* Loader stile */
+        #loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+        .dark #loader { background: rgba(17, 24, 39, 0.9); }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6366f1; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
         .switch-container { background-color: #e5e7eb; }
         .dark .switch-container { background-color: #374151; }
         .switch-btn-active { transform: translateX(0); }
@@ -35,6 +44,9 @@
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 transition-colors duration-300 min-h-screen">
+
+    <!-- Loader (nascondo contenuto finché non carica) -->
+    <div id="loader"><div class="spinner"></div></div>
 
     <div class="container mx-auto p-4 max-w-6xl">
         
@@ -46,7 +58,7 @@
                 </div>
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800 dark:text-white">BudgetFlow</h1>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Gestione Entrate & Uscite</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Gestione Entrate & Uscite (Cloud)</p>
                 </div>
             </div>
             <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
@@ -115,9 +127,8 @@
             <!-- Colonna Destra: Statistiche e Lista -->
             <div class="lg:col-span-2 space-y-6">
                 
-                <!-- Cards Statistiche (Saldo, Entrate, Uscite) -->
+                <!-- Cards Statistiche -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <!-- Saldo -->
                     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border-l-4 border-primary">
                         <div class="flex justify-between items-center">
                             <div>
@@ -127,7 +138,6 @@
                             <i class="fas fa-piggy-bank text-primary text-3xl opacity-50"></i>
                         </div>
                     </div>
-                    <!-- Entrate -->
                     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border-l-4 border-income">
                         <div class="flex justify-between items-center">
                             <div>
@@ -137,7 +147,6 @@
                             <i class="fas fa-arrow-trend-up text-income text-3xl opacity-50"></i>
                         </div>
                     </div>
-                    <!-- Uscite -->
                     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border-l-4 border-expense">
                         <div class="flex justify-between items-center">
                             <div>
@@ -172,7 +181,7 @@
                     <div id="lista-container" class="divide-y dark:divide-gray-700 max-h-[500px] overflow-y-auto">
                         <div class="p-10 text-center text-gray-400">
                             <i class="fas fa-coins text-4xl mb-2"></i>
-                            <p>Nessun movimento registrato</p>
+                            <p>Caricamento dati...</p>
                         </div>
                     </div>
                 </div>
@@ -182,15 +191,30 @@
     </div>
 
     <script>
-        // --- CONFIGURAZIONE ---
+        // --- CONFIGURAZIONE FIREBASE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCl4miDUT1wBBcRSZ-nfR-El_QUi2cw9V8",
+            authDomain: "gestione-spese-e7143.firebaseapp.com",
+            projectId: "gestione-spese-e7143",
+            storageBucket: "gestione-spese-e7143.firebasestorage.app",
+            messagingSenderId: "121354216805",
+            appId: "1:121354216805:web:b146b7aecd5a1e4680ed8c",
+            measurementId: "G-3DS5FLX93T"
+        };
+
+        // Inizializza Firebase
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // --- CONFIGURAZIONE APP ---
         const categorie = {
             uscita: ['Alimentari', 'Trasporti', 'Intrattenimento', 'Bollette', 'Salute', 'Shopping', 'Altro'],
             entrata: ['Stipendio', 'Freelance', 'Investimenti', 'Vendite', 'Regalo', 'Rimborsi', 'Altro']
         };
 
-        let transazioni = JSON.parse(localStorage.getItem('budgetFlowData')) || [];
+        let transazioni = []; // Non usiamo più localStorage, caricheremo da DB
         let myChart = null;
-        let currentType = 'uscita'; // Default
+        let currentType = 'uscita';
 
         // --- ELEMENTI DOM ---
         const form = document.getElementById('transaction-form');
@@ -203,10 +227,49 @@
         const labelUscita = document.getElementById('label-uscita');
         const labelEntrata = document.getElementById('label-entrata');
         
-        // Inizializza data odierna
         document.getElementById('data').valueAsDate = new Date();
 
-        // --- FUNZIONI LOGICHE ---
+        // --- FUNZIONI DATABASE (FIRESTORE) ---
+
+        // Carica dati in tempo reale
+        function caricaDatiTempoReale() {
+            db.collection("transazioni").orderBy("data", "desc").onSnapshot(snapshot => {
+                transazioni = []; // Reset array locale
+                snapshot.forEach(doc => {
+                    transazioni.push({ id: doc.id, ...doc.data() });
+                });
+                aggiornaDashboard();
+                
+                // Nascondi loader al primo caricamento
+                document.getElementById('loader').style.display = 'none';
+            }, error => {
+                console.error("Errore caricamento:", error);
+                alert("Errore di connessione al database. Controlla la console.");
+            });
+        }
+
+        // Aggiungi al DB
+        async function aggiungiTransazioneDB(data) {
+            try {
+                await db.collection("transazioni").add(data);
+                // Non serve aggiornare manualmente, l'ascoltatore (onSnapshot) farà tutto
+            } catch (error) {
+                console.error("Errore aggiunta:", error);
+                alert("Impossibile salvare la transazione.");
+            }
+        }
+
+        // Elimina dal DB
+        async function eliminaTransazioneDB(id) {
+            try {
+                await db.collection("transazioni").doc(id).delete();
+            } catch (error) {
+                console.error("Errore eliminazione:", error);
+                alert("Impossibile eliminare la transazione.");
+            }
+        }
+
+        // --- FUNZIONI LOGICHE UI ---
 
         function aggiornaCategorie() {
             categoriaSelect.innerHTML = '';
@@ -217,10 +280,6 @@
                 el.textContent = opt;
                 categoriaSelect.appendChild(el);
             });
-        }
-
-        function salvaDati() {
-            localStorage.setItem('budgetFlowData', JSON.stringify(transazioni));
         }
 
         function formattaData(dataStr) {
@@ -254,9 +313,6 @@
             if (listaFiltrata.length === 0) {
                 listaContainer.innerHTML = `<div class="p-10 text-center text-gray-400"><i class="fas fa-search text-4xl mb-2"></i><p>Nessun movimento trovato</p></div>`;
             } else {
-                // Ordina per data recente
-                listaFiltrata.sort((a, b) => new Date(b.data) - new Date(a.data));
-
                 listaFiltrata.forEach(t => {
                     const isEntrata = t.tipo === 'entrata';
                     const div = document.createElement('div');
@@ -291,25 +347,25 @@
             
             if (myChart) myChart.destroy();
 
-            // Se non ci sono dati, mostra messaggio
             if(entrate === 0 && uscite === 0) {
-                ctx.font = "16px sans-serif";
-                ctx.fillStyle = "#9ca3af";
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.font = "14px sans-serif";
+                ctx.fillStyle = document.documentElement.classList.contains('dark') ? "#9ca3af" : "#6b7280";
                 ctx.textAlign = "center";
-                ctx.fillText("Nessun dato da mostrare", ctx.canvas.width / 2, ctx.canvas.height / 2);
+                ctx.fillText("Nessun dato", ctx.canvas.width / 2, ctx.canvas.height / 2);
                 return;
             }
 
             myChart = new Chart(ctx, {
-                type: 'bar', // Grafico a barre orizzontali
+                type: 'bar',
                 data: {
                     labels: ['Entrate', 'Uscite'],
                     datasets: [{
                         label: '€',
                         data: [entrate, uscite],
                         backgroundColor: [
-                            'rgba(16, 185, 129, 0.7)', // Verde
-                            'rgba(239, 68, 68, 0.7)'  // Rosso
+                            'rgba(16, 185, 129, 0.7)',
+                            'rgba(239, 68, 68, 0.7)'
                         ],
                         borderColor: [
                             'rgba(16, 185, 129, 1)',
@@ -320,30 +376,25 @@
                     }]
                 },
                 options: {
-                    indexAxis: 'y', // Rende le barre orizzontali
+                    indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
-                    },
+                    plugins: { legend: { display: false } },
                     scales: {
                         x: { 
                             beginAtZero: true,
-                            grid: { color: localStorage.getItem('theme') === 'dark' ? '#374151' : '#e5e7eb' }
+                            grid: { color: document.documentElement.classList.contains('dark') ? '#374151' : '#e5e7eb' }
                         },
-                        y: { 
-                            grid: { display: false }
-                        }
+                        y: { grid: { display: false } }
                     }
                 }
             });
         }
 
-        function eliminaTransazione(id) {
+        // Funzione globale per eliminazione chiamata dall'HTML
+        window.eliminaTransazione = function(id) {
             if(confirm("Sei sicuro di voler eliminare questa transazione?")) {
-                transazioni = transazioni.filter(t => t.id !== id);
-                salvaDati();
-                aggiornaDashboard();
+                eliminaTransazioneDB(id);
             }
         }
 
@@ -365,7 +416,6 @@
 
         // --- EVENT LISTENERS ---
 
-        // Switch Tipo (Entrata/Uscita)
         typeSwitch.addEventListener('click', () => {
             currentType = currentType === 'uscita' ? 'entrata' : 'uscita';
             hiddenTypeInput.value = currentType;
@@ -385,49 +435,43 @@
                 labelEntrata.classList.remove('text-white');
                 labelEntrata.classList.add('text-gray-400');
             }
-            
             aggiornaCategorie();
         });
 
-        // Form Submit
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             const nuovaTransazione = {
-                id: Date.now().toString(),
                 descrizione: document.getElementById('descrizione').value,
                 importo: document.getElementById('importo').value,
                 categoria: document.getElementById('categoria').value,
                 data: document.getElementById('data').value,
-                tipo: currentType
+                tipo: currentType,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp() // Utile per ordinamento server
             };
-            transazioni.push(nuovaTransazione);
-            salvaDati();
-            aggiornaDashboard();
+            
+            aggiungiTransazioneDB(nuovaTransazione);
+            
             form.reset();
             document.getElementById('data').valueAsDate = new Date();
-            aggiornaCategorie(); // Reset categorie al default
+            aggiornaCategorie(); 
         });
 
-        // Filtro
         filtroSelect.addEventListener('change', aggiornaDashboard);
-
-        // Export
         document.getElementById('btn-export').addEventListener('click', esportaCSV);
 
-        // Dark Mode
         document.getElementById('theme-toggle').addEventListener('click', () => {
             document.documentElement.classList.toggle('dark');
             localStorage.setItem('theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-            aggiornaDashboard(); // Aggiorna grafici e colori
+            aggiornaDashboard(); 
         });
 
-        // Inizializzazione
+        // --- INIZIALIZZAZIONE ---
         if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
         }
         
         aggiornaCategorie();
-        aggiornaDashboard();
+        caricaDatiTempoReale(); // Avvia connessione database
 
     </script>
 </body>
